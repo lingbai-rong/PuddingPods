@@ -10,6 +10,28 @@
 
 `01010607` 仅用于 HyperOS 高级耳机能力兼容，不代表真实水月雨型号 ID。
 
+## GAIA 分帧
+
+命令与回包都封装在 GAIA v4 帧中：
+
+```
+FF 04 <len> <seq> <vendor> <feature> <cmd> <payload...>
+```
+
+- `len` 为 16 位大端，**只计 payload**，不含 `[seq][vendor][feature][cmd]` 这 4 字节。
+- 帧体长度 = `len` + 4；整帧长度 = `len` + 8。
+- 响应帧的 feature = 请求 feature 按位或 `0x01`（`1A→1B`、`40→41`、`1E→1F`、`26→27`）。
+- 本文其余章节的命令均为去帧头简写，实际发送需补 `FF 04 <len>`。
+
+电量示例：
+
+```
+→ FF 04 00 02 00 1D 1A 01 01 02               len=2
+← FF 04 00 06 00 1D 1B 01 01 64 02 64 03 5E   len=6
+                 └ 01 64 ┘└ 02 64 ┘└ 03 5E ┘
+                  左耳100%  右耳100%  充电盒94%
+```
+
 ## 噪声控制
 
 PUDDING TX：`00 1D 40 04 <mode>`；回包：`00 1D 41 04 <mode>`。
@@ -73,3 +95,20 @@ PuddingPods 3.45 优先直接打开 `BluetoothDeviceDetailsFragment`；若 Hyper
 - Focus Island -> `PopupActivity`（不变）。
 - HyperOS 官方高级耳机入口 `MiuiHeadsetActivity` -> `PuddingDetailActivity`。
 - `PuddingDetailActivity` -> `BluetoothDeviceDetailsFragment` 可访问系统 LHDC、低延迟、音量同步等功能。
+
+## 3.47 状态回读缺陷与修复
+
+3.47 的分帧器（混淆类 `Llc1;->b([B)`）把 `len` 当成整个帧体长度，每条回包被少读 4 字节：
+
+- 电量回包只剩 `00 1D 1B 01 01 64`，右耳与充电盒保持 0；
+- ANC、增益、指示灯回包只剩 1 字节，解析器取 `body[4]` 越界，状态读不回来，UI 回到默认值。
+
+修复为在 1 字节 / 2 字节长度两条分支的汇合点补上 4 字节元数据：
+
+```diff
+ :goto_4
++    add-int/lit8 v2, v2, 0x4
+     and-int/lit8 v0, v0, 0x1
+```
+
+切片长度、拷贝循环与 `consumed` 都由该值推导，一处修改即可恢复三路电量与全部状态回读；发送方向不受影响。
