@@ -45,12 +45,22 @@ object PuddingGaia {
         0x00, 0x1D, 0x1A, 0x01, 0x01, 0x02
     )
 
+    /**
+     * PUDDING's noise-control wire values follow the Qualcomm ANC_V2 standard order
+     * (OFF / ON / TRANSPARENT / ANTI_WIND / ADAPTIVE), not the order the UI presents.
+     * The two are unrelated: [wireValue] is what the earbud understands, [uiStatus] is the
+     * index used by HyperOS settings and must stay stable.
+     *
+     * Verified against the earbuds: choosing "basic" used to engage anti-wind, "adaptive"
+     * used to engage basic and "anti-wind" used to engage adaptive, which is exactly the
+     * permutation produced by the previous mapping (0x01=ADAPTIVE, 0x04=BASIC).
+     */
     enum class NoiseMode(val wireValue: Int, val uiStatus: Int) {
         OFF(0x00, 1),
-        ADAPTIVE(0x01, 4),
+        BASIC(0x01, 2),
         TRANSPARENCY(0x02, 3),
-        WIND_REDUCTION(0x03, 5),
-        BASIC(0x04, 2);
+        ADAPTIVE(0x04, 4),
+        WIND_REDUCTION(0x03, 5);
 
         companion object {
             fun fromWire(value: Int): NoiseMode? = entries.firstOrNull { it.wireValue == value }
