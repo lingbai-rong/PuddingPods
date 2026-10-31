@@ -14,6 +14,9 @@ object PuddingGaia {
     const val FLAG_CHECKSUM: Int = 0x01
     const val FLAG_LENGTH_EXTENSION: Int = 0x02
 
+    /** Size of the GAIA command header (`vendor` + `command word`), which the length omits. */
+    const val COMMAND_HEADER_SIZE: Int = 4
+
     // Standard Bluetooth Serial Port Profile UUID used by PUDDING.
     const val SPP_UUID = "00001101-0000-1000-8000-00805f9b34fb"
 
@@ -80,13 +83,24 @@ object PuddingGaia {
         0x00, 0x1D, 0x26, 0x02, if (enabled) 0x01 else 0x00
     )
 
+    /**
+     * Wraps a payload (`00 1D <cmd> <sub> [params...]`) in the RFCOMM v4 frame.
+     *
+     * The length field must count only the parameters that follow the command header, exactly
+     * like the earbud does on the way back; the official app sends `FF 04 00 02 00 1D 1A 01 01 02`
+     * for a two-parameter battery query, not `06`. Declaring the whole payload still works
+     * because the earbud ignores a length that overruns the frame, but it breaks the symmetry
+     * [StreamDecoder] relies on and makes the wire trace disagree with the reference captures.
+     */
     fun frame(protocolVersion: Int, payload: ByteArray): ByteArray {
-        require(payload.size <= 0xFF) { "PUDDING GAIA short frame payload too large" }
+        require(payload.size >= COMMAND_HEADER_SIZE) { "PUDDING GAIA payload lacks a command header" }
+        val parameterLength = payload.size - COMMAND_HEADER_SIZE
+        require(parameterLength <= 0xFF) { "PUDDING GAIA short frame payload too large" }
         return byteArrayOf(
             SOF.toByte(),
             protocolVersion.toByte(),
             0x00, // no checksum, no length extension
-            payload.size.toByte(),
+            parameterLength.toByte(),
         ) + payload
     }
 
@@ -97,6 +111,13 @@ object PuddingGaia {
      * Stateful RFCOMM stream decoder. InputStream reads may split or merge GAIA frames.
      * PUDDING traffic observed so far uses short, no-checksum frames; checksum and extended
      * length are supported here as well for robustness.
+     *
+     * PUDDING's length field counts only the parameters that follow the 4-byte command header
+     * (the same convention HyperEars documents), so the parameters a frame carries are always
+     * `4 + payloadLength` bytes long. Treating `payloadLength` as the whole parameter block
+     * truncates every response by the 4 command bytes: the battery response
+     * `00 1D 1B 01 (01 LL)(02 RR)(03 CC)` then decodes as a single `[01, LL]` pair, which is
+     * why only the left earbud's level ever reached the UI.
      */
     class StreamDecoder {
         private val pending = ArrayList<Byte>()
@@ -124,15 +145,21 @@ object PuddingGaia {
                     pending[3].toInt() and 0xFF
                 }
                 val checksumSize = if (flags and FLAG_CHECKSUM != 0) 1 else 0
-                val frameSize = headerSize + payloadLength + checksumSize
+                // The declared length covers the command header + parameters, but not the
+                // framing header itself, so the command header has to be added back here.
+                val frameSize = headerSize + COMMAND_HEADER_SIZE + payloadLength + checksumSize
                 if (payloadLength < 0 || frameSize > 65540) {
                     pending.removeAt(0)
                     continue
                 }
                 if (pending.size < frameSize) break
 
-                val payload = ByteArray(payloadLength) { pending[headerSize + it] }
+                val payload = ByteArray(COMMAND_HEADER_SIZE + payloadLength) {
+                    pending[headerSize + it]
+                }
                 result += payload
+                // Anything past frameSize is not covered by the declared length: PUDDING
+                // occasionally appends a stray byte (0x40 / 0x86) that must not be parsed.
                 repeat(frameSize) { pending.removeAt(0) }
             }
             return result
