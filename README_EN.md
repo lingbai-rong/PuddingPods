@@ -10,19 +10,20 @@
 [![LSPosed](https://img.shields.io/badge/Framework-LSPosed-blueviolet?style=flat-square)](https://github.com/LSPosed/LSPosed)
 [![HyperOS](https://img.shields.io/badge/ROM-HyperOS%203-orange?style=flat-square)](https://hyperos.mi.com)
 
-**English** | **[简体中文](README.md)**
+**[繁體中文](README.md)** | **[简体中文](README_CN.md)** | **English**
 
 </div>
 
 An Xposed module that provides system-level control for **MOONDROP PUDDING / MD-TWS-056** earphones on Xiaomi HyperOS devices.
 
-Current version: **3.45**  
+Current version: **3.47**  
 Application ID: `rongyi.puddingpods`
 
 ### Earphone Features
 
 - **Noise Cancellation Control** — Supports Off / Transparency / Basic ANC / Adaptive ANC / Wind Noise Reduction.
 - **Three-part Battery Display** — Reads the real PUDDING GAIA battery levels for the left earbud, right earbud, and charging case.
+- **Earbud-side Mode Sync** — When ANC is changed by a long-press on the earbuds, the module syncs it from an active report or the ~3 s status poll and refreshes all three battery values at the same time.
 - **Gain Control** — Supports Low / Medium / High output gain.
 - **Indicator Light Control** — Turns the earphone indicator light on or off.
 
